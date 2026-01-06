@@ -5,7 +5,7 @@
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/secrets.js';
 
-export function auth(req, res, next) {
+export function authenticateToken(req, res, next) {
   const authHeader = req.headers.authorization || '';
   
   if (!authHeader.toLowerCase().startsWith('bearer ')) {
@@ -21,3 +21,6 @@ export function auth(req, res, next) {
     return res.status(401).json({ error: 'unauthorized' });
   }
 }
+
+// 後方互換のためのエイリアス
+export const auth = authenticateToken;
