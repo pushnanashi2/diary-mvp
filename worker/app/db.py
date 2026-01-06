@@ -1,3 +1,10 @@
+"""
+データベース操作モジュール（Phase2対応版）
+
+Phase2追加:
+- save_entry_tags(): タグ保存機能
+"""
+
 import time
 import mysql.connector
 
@@ -27,6 +34,29 @@ def update_entry(db, entry_id: int, transcript: str, summary: str | None,
         "UPDATE entries SET transcript_text=%s, summary_text=%s, pii_detected=%s, pii_types=%s, content_flagged=%s, flag_types=%s WHERE id=%s",
         (transcript, summary, pii_detected, pii_types_json, content_flagged, flag_types_json, entry_id)
     )
+
+def save_entry_tags(db, entry_id: int, tags: list[str]):
+    """
+    エントリのタグを保存（Phase2-2）
+    
+    Args:
+        db: データベース接続
+        entry_id: エントリID
+        tags: タグのリスト（例: ['#天気', '#友人']）
+    """
+    if not tags:
+        return
+    
+    cur = db.cursor()
+    for tag in tags:
+        try:
+            # INSERT IGNORE で重複を無視
+            cur.execute(
+                "INSERT IGNORE INTO entry_tags(entry_id, tag) VALUES (%s, %s)",
+                (entry_id, tag)
+            )
+        except Exception as e:
+            print(f"[save_entry_tags] Failed to insert tag {tag} for entry {entry_id}: {e}")
 
 def get_summary(db, summary_id: int):
     cur = db.cursor(dictionary=True)
