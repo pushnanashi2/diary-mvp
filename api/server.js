@@ -45,7 +45,7 @@ import { incrementDailyCounter } from './queries/dailyCounterQueries.js';
 // Middleware & Utils
 import { authenticateToken } from './middleware/auth.js';
 import { guessContentTypeFromKey } from './utils/audioUtils.js';
-import { formatDate } from './utils/dateUtils.js';
+import { getUtcDateParts } from './utils/dateUtils.js';
 import { validateAudioFile, audioFileFilter } from './utils/fileValidation.js';
 
 // Migrations
@@ -278,11 +278,9 @@ app.post('/entries', auth, upload.single('audio'), async (req, res) => {
 
     // タイトル生成
     const now = new Date();
-    const dateYmd = formatDate(now);
-    const hour = String(now.getHours()).padStart(2, '0');
-    const minute = String(now.getMinutes()).padStart(2, '0');
+    const { dateYmd, HH, MM } = getUtcDateParts(now);
     const counter = await incrementDailyCounter(pool, req.userId, dateYmd);
-    const title = `${dateYmd}-${hour}-${minute}-#${counter}`;
+    const title = `${dateYmd}-${HH}-${MM}-#${counter}`;
 
     // MinIOアップロード
     const nowISO = now.toISOString().replace(/[:.]/g, '-');
