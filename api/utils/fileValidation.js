@@ -71,7 +71,8 @@ export function audioFileFilter(req, file, cb) {
   }
 
   // MIMEタイプの基本チェック（Content-Typeヘッダー）
-  if (!file.mimetype.startsWith('audio/')) {
+  // application/octet-stream も許可（一部クライアントがこれを送信する）
+  if (!file.mimetype.startsWith('audio/') && file.mimetype !== 'application/octet-stream') {
     return cb(new Error(`Invalid MIME type: ${file.mimetype}`), false);
   }
 
