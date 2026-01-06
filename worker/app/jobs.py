@@ -1,9 +1,19 @@
+"""
+ジョブ処理モジュール（Phase2対応版）
+
+Phase2追加機能:
+- タグ自動抽出（tagger.py）
+- NG検出強化（ng_detector.py）
+"""
+
 import json, re
 from .locks import acquire_lock
 from .storage import get_object_bytes
 from .cleaners import clean_transcript
 from .providers_openai import stt as stt_openai, chat_summary
 from .pii import detect_and_mask
+from .tagger import extract_tags  # Phase2-2
+from .ng_detector import detect_ng  # Phase2-3
 from . import db as dbm
 
 def parse_audio_key(audio_url: str, bucket: str) -> str:
@@ -29,6 +39,10 @@ def is_bullet_format_ok(text: str) -> bool:
     return _BULLET_RE.match(t) is not None
 
 def detect_flags(text: str, ng_patterns, nonsave_patterns) -> list[str]:
+    """
+    旧版のNG検出（後方互換）
+    Phase2-3でng_detector.pyに移行したが、resources経由の検出も残す
+    """
     t = text or ""
     types = []
     if any(p.search(t) for p in ng_patterns):
@@ -38,6 +52,13 @@ def detect_flags(text: str, ng_patterns, nonsave_patterns) -> list[str]:
     return types
 
 def process_entry(*, r, db, minio, bucket: str, openai_client, resources, entry_id: int):
+    """
+    エントリ処理（Phase2対応版）
+    
+    追加機能:
+    1. タグ自動抽出（transcript_textから）
+    2. NG検出強化（ng_detector.py使用）
+    """
     if not acquire_lock(r, f"lock:entry:{entry_id}", ttl_sec=600):
         return
 
@@ -61,8 +82,15 @@ def process_entry(*, r, db, minio, bucket: str, openai_client, resources, entry_
     pii_detected = 1 if pii.types else 0
     pii_types_json = json.dumps(pii.types, ensure_ascii=False) if pii.types else None
 
-    # NG検出（マスク後テキストに対して）
-    flag_types = detect_flags(masked, resources.ng_topic_patterns, resources.non_save_patterns)
+    # Phase2-3: NG検出強化（ng_detector.py使用）
+    ng_result = detect_ng(masked)
+    flag_types = ng_result['ng_types'].copy() if ng_result['is_ng'] else []
+    
+    # 旧版のNG検出も併用（resources経由）
+    old_flags = detect_flags(masked, resources.ng_topic_patterns, resources.non_save_patterns)
+    for f in old_flags:
+        if f not in flag_types:
+            flag_types.append(f)
 
     # 重要：PIIが出たら、それだけでAIブロック対象
     if pii_detected == 1:
@@ -78,6 +106,7 @@ def process_entry(*, r, db, minio, bucket: str, openai_client, resources, entry_
         user = resources.entry_summary_user_tpl.replace("{TEXT}", masked)
         summ = chat_summary(openai_client, resources.entry_summary_system, user)
 
+    # DB更新
     dbm.update_entry(
         db,
         entry_id,
@@ -88,8 +117,20 @@ def process_entry(*, r, db, minio, bucket: str, openai_client, resources, entry_
         content_flagged,
         flag_types_json,
     )
+    
+    # Phase2-2: タグ抽出＆保存
+    if masked and content_flagged == 0:
+        tags = extract_tags(masked)
+        if tags:
+            dbm.save_entry_tags(db, entry_id, tags)
+            print(f"[process_entry] Entry {entry_id} tags: {tags}")
 
 def process_range_summary(*, r, db, openai_client, resources, summary_id: int):
+    """
+    期間要約処理
+    
+    変更なし（Phase2では変更不要）
+    """
     if not dbm.claim_summary_processing(db, summary_id):
         return
 
