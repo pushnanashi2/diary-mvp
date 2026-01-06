@@ -1,0 +1,29 @@
+# HTTPS証明書サンプル（開発用）
+# 
+# このファイルは自己署名証明書のサンプルです。
+# 本番環境では Let's Encrypt などの正式な証明書を使用してください。
+#
+# 自己署名証明書の生成手順:
+#
+# 1. 秘密鍵生成
+#    openssl genrsa -out server.key 2048
+#
+# 2. 証明書署名要求（CSR）作成
+#    openssl req -new -key server.key -out server.csr \
+#      -subj "/C=JP/ST=Tokyo/L=Tokyo/O=DiaryMVP/CN=localhost"
+#
+# 3. 自己署名証明書生成（有効期限365日）
+#    openssl x509 -req -days 365 -in server.csr \
+#      -signkey server.key -out server.crt
+#
+# 4. 確認
+#    openssl x509 -in server.crt -text -noout
+#
+# 生成されたファイル:
+# - server.key : 秘密鍵（絶対に公開しない）
+# - server.crt : 証明書
+# - server.csr : 署名要求（生成後は削除可）
+#
+# 注意:
+# - 自己署名証明書はブラウザで警告が表示されます
+# - 開発用途のみに使用し、本番では正式な証明書を使用してください
