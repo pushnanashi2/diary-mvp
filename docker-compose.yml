@@ -44,6 +44,7 @@ services:
       NODE_ENV: production
       PORT: 8000
 
+      # DB接続情報（フォールバック用）
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_DB: diary
@@ -51,8 +52,6 @@ services:
       MYSQL_PASSWORD: diary_password
 
       REDIS_URL: redis://redis:6379
-
-      JWT_SECRET: change_me_long_random
 
       # 「外部に返すURL」のベース（署名付き音声URLで使う）
       PUBLIC_BASE_URL: http://localhost:8000
@@ -68,6 +67,9 @@ services:
       AUDIO_LINK_TTL_SEC: 600       # 10分
       RL_ENTRIES_PER_MIN: 30
       RL_SUMMARIES_PER_MIN: 20
+    volumes:
+      # 🔐 秘密情報をマウント（リファクタリング後に追加）
+      - ./.secrets:/app/.secrets:ro
     depends_on:
       mysql:
         condition: service_healthy
