@@ -1,0 +1,4 @@
+mysql-connector-python
+redis
+minio
+openai

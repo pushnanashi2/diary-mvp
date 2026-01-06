@@ -1,0 +1,67 @@
+# 秘密情報・認証情報（絶対にGitに入れない）
+.env
+.secrets/
+*.key
+*.pem
+
+# 環境変数ファイル
+api/.env
+worker/.env
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.npm
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Docker volumes（ローカルデータ）
+mysql-data/
+minio-data/
+redis-data/
+
+# ログファイル
+*.log
+logs/
+
+# OS関連
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE設定
+.vscode/
+.idea/
+*.iml
+
+# テスト・デバッグ用
+test-audio/
+temp/
+tmp/
+
+# 音声ファイル（サンプル以外）
+*.m4a
+*.mp3
+*.wav
+*.ogg
+*.flac
+!sample.m4a
+
+# データベースバックアップ
+*.sql
+*.dump
+*.save
