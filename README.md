@@ -1,17 +1,39 @@
-# 📱 音声AI日記アプリ
+# 音声AI日記アプリ MVP
 
 音声で話すだけで日記が完成し、振り返り（要約）ができる日記アプリのMVP（Minimum Viable Product）です。
 
-## ✨ 主な機能
+## ✨ 機能
 
 - 🎤 **音声アップロード**: 音声ファイルをアップロードして日記を作成
 - 📝 **自動文字起こし**: OpenAI Whisper APIによる高精度な音声認識
 - 🤖 **AI要約**: GPTによる自動要約生成
-- 🔒 **プライバシー保護**: 
-  - PII（個人識別情報）の自動検出とマスキング
-  - 電話番号・メールアドレスを含む日記は要約対象外
-- 📊 **期間要約**: 複数の日記をまとめて振り返り
-- 🎨 **テンプレート**: デフォルト・箇条書きなど複数の要約スタイル
+- 🔒 **プライバシー保護**: PII（個人識別情報）の自動検出とマスキング
+  - 電話番号・メールアドレスを含むエントリは要約対象外
+- 📊 **期間要約**: 指定期間の日記をまとめて要約
+- 🎨 **複数テンプレート**: 要約スタイルを選択可能
+
+## 🔐 Phase1: セキュリティ強化対応（完了）
+
+モバイルアプリ化に向けた脆弱性対策を実施:
+
+### 1. ✅ public_id化
+- **問題**: 連番ID（1, 2, 3...）で推測攻撃が可能
+- **対策**: ULID採用でランダムID化
+- **影響**: API URL変更 `/entries/123` → `/entries/01HQVXYZ...`
+
+### 2. ✅ 音声URL転送の禁止
+- **問題**: `/audio?token=...` のURLをコピーすれば第三者が再生可能
+- **対策**: Bearer認証必須化
+- **変更**: `/entries/:public_id/audio` エンドポイント新設
+
+### 3. ✅ CORS設定
+- **モバイルアプリからのAPI呼び出しに対応**
+- **設定**: `CORS_ORIGIN` 環境変数で制御
+
+### 4. ✅ ファイル検証強化
+- **MIMEタイプ検証**: Content-Typeヘッダー
+- **拡張子チェック**: `.m4a`, `.mp3`, `.wav` など
+- **マジックバイト検証**: file-typeライブラリで実ファイル形式を確認
 
 ## 🏗️ システム構成
 
@@ -21,151 +43,148 @@ Docker Composeで以下の5つのサービスを構成：
 - **worker** (Python): STT、テキスト処理、AI要約
 - **mysql**: データベース
 - **redis**: ジョブキュー
-- **minio**: 音声ファイルストレージ
-
-## 📐 アーキテクチャ（リファクタリング後）
-
-```
-api/
-  ├── config/          # 設定ファイル
-  │   ├── secrets.js   # 秘密情報読み込み
-  │   ├── database.js  # DB接続設定
-  │   ├── storage.js   # MinIO設定
-  │   └── redis.js     # Redis接続
-  ├── queries/         # SQLクエリ
-  │   ├── userQueries.js
-  │   ├── entryQueries.js
-  │   ├── summaryQueries.js
-  │   └── dailyCounterQueries.js
-  ├── middleware/      # ミドルウェア
-  │   ├── auth.js      # JWT認証
-  │   └── rateLimit.js # レート制限
-  ├── utils/           # ユーティリティ
-  │   ├── audioUtils.js
-  │   ├── dateUtils.js
-  │   └── validation.js
-  ├── db/              # データベース
-  │   └── migrations.js
-  └── server.js        # メインサーバー
-
-.secrets/              # 秘密情報（Git除外）
-  ├── openai.key       # OpenAI APIキー
-  ├── jwt.secret       # JWT署名用シークレット
-  └── db.creds         # DB認証情報
-```
+- **minio**: 音声ファイルストレージ（S3互換）
 
 ## 🚀 セットアップ
 
-### 前提条件
-
-- Docker & Docker Compose
-- OpenAI API キー
-
-### 1. リポジトリのクローン
+### 1. リポジトリをクローン
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/pushnanashi2/diary-mvp.git
 cd diary-mvp
 ```
 
 ### 2. 秘密情報の設定
 
-```bash
-# サンプルファイルをコピー
-cp .secrets/openai.key.example .secrets/openai.key
-cp .secrets/jwt.secret.example .secrets/jwt.secret
-cp .secrets/db.creds.example .secrets/db.creds
+以下のファイルを作成してください:
 
-# 各ファイルを編集して実際の値を設定
-# openai.key: OpenAI APIキーを記入
-# jwt.secret: ランダムな長い文字列を記入（32文字以上推奨）
-# db.creds: データベース認証情報をJSON形式で記入
+#### `.secrets/db.creds`
+```json
+{
+  "host": "mysql",
+  "port": 3306,
+  "database": "diary",
+  "user": "diary",
+  "password": "diary_password"
+}
 ```
 
-**または従来の環境変数方式（.env）を使用:**
-
+#### `.secrets/jwt.secret`
 ```bash
-cp api/.env.example api/.env
-cp worker/.env.example worker/.env
-
-# 各.envファイルを編集して必要な情報を設定
+# 自動生成
+openssl rand -base64 48 > .secrets/jwt.secret
 ```
 
-### 3. 起動
+#### `.secrets/openai.key`
+```
+sk-proj-YOUR_OPENAI_API_KEY_HERE
+```
+
+[OpenAI APIキー取得](https://platform.openai.com/api-keys)
+
+#### `.secrets/server.crt` と `.secrets/server.key`（オプション: HTTPS用）
+```bash
+# 自己署名証明書生成（開発用）
+openssl genrsa -out .secrets/server.key 2048
+openssl req -new -key .secrets/server.key -out .secrets/server.csr \
+  -subj "/C=JP/ST=Tokyo/L=Tokyo/O=DiaryMVP/CN=localhost"
+openssl x509 -req -days 365 -in .secrets/server.csr \
+  -signkey .secrets/server.key -out .secrets/server.crt
+```
+
+### 3. Docker起動
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 ### 4. 動作確認
 
 ```bash
+# ヘルスチェック
 curl http://localhost:8000/health
+
+# ユーザー登録
+curl -X POST http://localhost:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"testpass123"}'
+
+# レスポンス例
+# {"access_token":"eyJhbG..."}
 ```
 
-## 📚 API仕様
+## 📡 API仕様
 
-### 主要エンドポイント
+### 認証
+- `POST /auth/register` - ユーザー登録
+- `POST /auth/login` - ログイン
 
-- **POST /auth/register** - ユーザー登録
-- **POST /auth/login** - ログイン
-- **POST /entries** - 日記エントリ作成
-- **GET /entries** - エントリ一覧取得
-- **POST /summaries** - 期間要約作成
-- **GET /summaries/:id** - 要約取得
+### エントリ（Phase1対応: public_id使用）
+- `POST /entries` - 音声アップロード
+- `GET /entries` - エントリ一覧
+- `GET /entries/:public_id` - エントリ詳細
+- `GET /entries/:public_id/audio` - 音声ストリーム（Bearer必須）
+- `DELETE /entries/:public_id` - エントリ削除
 
-詳細は[Notionドキュメント](https://www.notion.so/06-API-2e0c742b052381578cd9f027ee91f469)を参照してください。
+### 期間要約（Phase1対応: public_id使用）
+- `POST /summaries` - 期間要約作成
+- `GET /summaries` - 要約一覧
+- `GET /summaries/:public_id` - 要約詳細
+- `POST /summaries/:public_id/retry` - 要約リトライ
+
+詳細は [Notion: API仕様一覧](https://www.notion.so/06-API-2e0c742b052381578cd9f027ee91f469) を参照
 
 ## 🔒 セキュリティ
 
-- **JWT認証**: Bearer token方式
-- **PII自動検出・マスキング**: 電話番号・メールアドレスの保護
-- **レート制限**: API乱用防止
-- **音声ファイルの署名付きURL**: 期限付きアクセス制御
-- **秘密情報の分離管理**: `.secrets/`ディレクトリで集中管理
+- **JWT認証**: すべてのエンドポイントで認証必須
+- **PII保護**: 個人情報を自動検出・マスキング
+- **レート制限**: エントリ作成 30回/分、要約作成 20回/分
+- **音声URL**: Bearer認証必須（Phase1対応）
+- **ファイル検証**: MIMEタイプ + マジックバイト検証（Phase1対応）
 
-### 秘密情報管理
+## 📊 ステータス
 
-このプロジェクトでは、以下のルールで秘密情報を管理しています:
+### 完了済み
+✅ MVP基本機能実装完了  
+✅ コーディング規約整備  
+✅ リファクタリング完了（SQL/設定/ミドルウェア分離）  
+✅ **Phase1: セキュリティ強化完了**
+  - public_id化
+  - Bearer必須化
+  - CORS設定
+  - ファイル検証強化
 
-- ✅ `.secrets/`ディレクトリで秘密情報を集中管理
-- ✅ `.gitignore`で自動除外
-- ✅ サンプルファイル（.example）のみGit管理
-- ❌ APIキー・トークン・パスワードは**絶対にGitにコミットしない**
-
-## 📝 開発状況
-
-### 完了済み（✅）
-- MVP基本機能実装完了
-- コーディング規約作成
-- **リファクタリング完了**:
-  - ✅ SQL文とJSロジックの完全分離
-  - ✅ 秘密情報管理の強化（.secrets/化）
-  - ✅ 設定ファイルの分離
-  - ✅ ミドルウェア・ユーティリティの分離
-
-### 次の優先タスク
-- [ ] public_id化（外部ID連番問題の解決）
+### 次の作業
 - [ ] タイトル採番#0問題の調査
-- [ ] 共有禁止の厳密化（Bearer必須方式）
+- [ ] STTローカル化（プライバシー強化）
+- [ ] タグ辞書機能
+- [ ] モバイルアプリ開発（iOS/Android）
 
-## 📖 ドキュメント
+詳細は [Notion: 課題・TODO](https://www.notion.so/09-TODO-2e0c742b052381fc9f31e605b8efed50) を参照
 
-完全な開発ドキュメントはNotionで管理しています:
-- [📘 音声AI日記アプリ - 開発ドキュメント](https://www.notion.so/AI-2e0c742b0523815a904de4b309dc9a18)
-- [📐 コーディング規約](https://www.notion.so/11-2e0c742b05238173901ae9bbd667f4aa)
+## 📱 モバイルアプリ化の注意点
 
-## 🎯 コーディング規約
+### トークンストレージ
+- iOS: Keychain
+- Android: EncryptedSharedPreferences
 
-このプロジェクトでは[コーディング規約](https://www.notion.so/11-2e0c742b05238173901ae9bbd667f4aa)に従って開発しています。
+### 証明書ピンニング
+- サーバー証明書のフィンガープリントをアプリに埋め込み
+- MITM攻撃対策
 
-主要な原則:
-- **SQL分離**: クエリは`api/queries/`に集約
-- **秘密情報分離**: `.secrets/`で管理、環境変数への依存を最小化
-- **命名規則**: JavaScript=camelCase、Python=snake_case
-- **非同期処理**: async/awaitを使用
-- **コメント**: 複雑なロジックには必ず説明を記載
+### HTTPS必須
+```bash
+# 本番環境では Let's Encrypt などの正式な証明書を使用
+# 開発用の自己署名証明書は上記のセットアップ参照
+```
 
 ## 📄 ライセンス
 
-非公開
+Private
+
+---
+
+## 🔗 関連リンク
+
+- [Notion: 開発ドキュメント](https://www.notion.so/AI-2e0c742b0523815a904de4b309dc9a18)
+- [Notion: コーディング規約](https://www.notion.so/11-2e0c742b05238173901ae9bbd667f4aa)
