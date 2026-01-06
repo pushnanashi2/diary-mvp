@@ -1,0 +1,7 @@
+{
+  "host": "mysql",
+  "port": 3306,
+  "database": "diary",
+  "user": "diary",
+  "password": "your-secure-password-here"
+}
