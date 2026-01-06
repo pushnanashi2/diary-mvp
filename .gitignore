@@ -4,6 +4,10 @@
 *.key
 *.pem
 
+# ローカル専用スクリプト
+scripts/quick-setup.sh
+scripts/*-local.sh
+
 # 環境変数ファイル
 api/.env
 worker/.env
