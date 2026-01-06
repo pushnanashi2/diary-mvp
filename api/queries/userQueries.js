@@ -12,9 +12,9 @@ export async function createUser(pool, email, passwordHash) {
 }
 
 // メールでユーザー検索
-export async function findUserByEmail(pool, email) {
+export async function getUserByEmail(pool, email) {
   const [rows] = await pool.query(
-    `SELECT id, password_hash FROM users WHERE email=?`,
+    `SELECT id, email, password_hash, default_summary_template FROM users WHERE email=?`,
     [email]
   );
   return rows[0] || null;
@@ -30,7 +30,7 @@ export async function getUserById(pool, userId) {
 }
 
 // デフォルトテンプレート更新
-export async function updateDefaultTemplate(pool, userId, templateId) {
+export async function updateUserDefaultTemplate(pool, userId, templateId) {
   await pool.query(
     `UPDATE users SET default_summary_template=? WHERE id=?`,
     [templateId, userId]
@@ -43,13 +43,4 @@ export async function deleteUser(pool, userId) {
     `DELETE FROM users WHERE id=?`,
     [userId]
   );
-}
-
-// デフォルトテンプレート取得
-export async function getDefaultTemplate(pool, userId) {
-  const [rows] = await pool.query(
-    `SELECT default_summary_template FROM users WHERE id=?`,
-    [userId]
-  );
-  return rows[0]?.default_summary_template || 'default';
 }
