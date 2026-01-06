@@ -9,7 +9,8 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const projectRoot = join(__dirname, '..', '..');
+// 修正: config/ からプロジェクトルートへ（1つ上）
+const projectRoot = join(__dirname, '..');
 
 /**
  * ファイルから秘密情報を読み込む
@@ -19,16 +20,16 @@ const projectRoot = join(__dirname, '..', '..');
  */
 function readSecret(filename, fallbackEnv = null) {
   const secretPath = join(projectRoot, '.secrets', filename);
-  
+
   if (existsSync(secretPath)) {
     return readFileSync(secretPath, 'utf-8').trim();
   }
-  
+
   // ファイルがなければ環境変数を使用
   if (fallbackEnv && process.env[fallbackEnv]) {
     return process.env[fallbackEnv];
   }
-  
+
   return null;
 }
 
@@ -37,12 +38,12 @@ function readSecret(filename, fallbackEnv = null) {
  */
 function readSecretJson(filename, fallbackEnvPrefix = null) {
   const secretPath = join(projectRoot, '.secrets', filename);
-  
+
   if (existsSync(secretPath)) {
     const content = readFileSync(secretPath, 'utf-8');
     return JSON.parse(content);
   }
-  
+
   // フォールバック: 環境変数から読み込み
   if (fallbackEnvPrefix) {
     return {
@@ -53,7 +54,7 @@ function readSecretJson(filename, fallbackEnvPrefix = null) {
       password: process.env[`${fallbackEnvPrefix}_PASSWORD`],
     };
   }
-  
+
   return null;
 }
 
@@ -79,6 +80,6 @@ export const APP_CONFIG = {
   publicBaseUrl: process.env.PUBLIC_BASE_URL || 'http://localhost:8000',
   maxAudioBytes: Number(process.env.MAX_AUDIO_BYTES || 26214400),
   audioLinkTtlSec: Number(process.env.AUDIO_LINK_TTL_SEC || 600),
-  rateLimitEntriesPerMin: Number(process.env.RL_ENTRIES_PER_MIN || 30),
-  rateLimitSummariesPerMin: Number(process.env.RL_SUMMARIES_PER_MIN || 20),
+  rlEntriesPerMin: Number(process.env.RL_ENTRIES_PER_MIN || 30),
+  rlSummariesPerMin: Number(process.env.RL_SUMMARIES_PER_MIN || 20),
 };
