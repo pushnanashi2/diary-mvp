@@ -1,0 +1,46 @@
+# 共通設定（全環境共通）
+
+app:
+  name: "voice-ai-diary"
+  version: "1.0.0"
+
+api:
+  port: 8000
+  cors:
+    enabled: true
+    origins:
+      - "http://localhost:3000"
+      - "http://localhost:8000"
+
+audio:
+  max_size_bytes: 26214400  # 25MB
+  allowed_formats:
+    - m4a
+    - mp3
+    - wav
+    - mp4
+    - webm
+    - ogg
+    - aac
+  link_ttl_sec: 600  # 10分
+
+rate_limit:
+  entries_per_min: 30
+  summaries_per_min: 20
+
+storage:
+  provider: "minio"  # or "s3"
+  bucket: "audio"
+
+database:
+  charset: "utf8mb4"
+  timezone: "UTC"
+
+worker:
+  queue_name: "jobs:default"
+  brpop_timeout: 30
+  max_retries: 3
+
+logging:
+  level: "info"
+  format: "json"
