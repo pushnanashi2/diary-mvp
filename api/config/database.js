@@ -55,6 +55,14 @@ export function getPool() {
 }
 
 /**
+ * データベース接続を取得（プールから）
+ * getPool()のエイリアス
+ */
+export function getConnection() {
+  return getPool();
+}
+
+/**
  * データベース接続を安全にクローズ
  */
 export async function closeDatabase() {
