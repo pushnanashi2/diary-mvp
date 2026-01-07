@@ -15,6 +15,7 @@ import { JWT_SECRET } from '../config/secrets.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { authenticateToken } from '../middleware/auth.js';
 import * as twoFactorService from '../services/twoFactorService.js';
+import { getPool } from '../config/database.js';
 
 const router = express.Router();
 
@@ -24,13 +25,13 @@ const router = express.Router();
  */
 router.post('/register', async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, name } = req.body;
     
     if (!email || !password) {
       throw new ApiError(400, 'BAD_REQUEST', 'Email and password are required');
     }
 
-    const pool = req.context.pool;
+    const pool = getPool();
     
     // 既存ユーザーチェック
     const existing = await getUserByEmail(pool, email);
@@ -42,14 +43,18 @@ router.post('/register', async (req, res, next) => {
     const passwordHash = await bcrypt.hash(password, 10);
     
     // ユーザー作成
-    const userId = await createUser(pool, email, passwordHash);
+    const userId = await createUser(pool, email, passwordHash, name);
 
     // JWT発行
     const token = jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: '7d' });
 
     res.status(201).json({
-      user_id: userId,
-      access_token: token
+      user: {
+        id: userId,
+        email,
+        name
+      },
+      token
     });
   } catch (err) {
     next(err);
@@ -68,7 +73,7 @@ router.post('/login', async (req, res, next) => {
       throw new ApiError(400, 'BAD_REQUEST', 'Email and password are required');
     }
 
-    const pool = req.context.pool;
+    const pool = getPool();
     
     // ユーザー取得
     const user = await getUserByEmail(pool, email);
@@ -104,8 +109,12 @@ router.post('/login', async (req, res, next) => {
     const token = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
     res.json({
-      user_id: user.id,
-      access_token: token
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name
+      },
+      token
     });
   } catch (err) {
     next(err);
@@ -118,8 +127,8 @@ router.post('/login', async (req, res, next) => {
  */
 router.post('/2fa/enable', authenticateToken, async (req, res, next) => {
   try {
-    const pool = req.context.pool;
-    const user = await getUserById(pool, req.user.id);
+    const pool = getPool();
+    const user = await getUserById(pool, req.userId);
     
     if (user.two_factor_enabled) {
       throw new ApiError(400, '2FA_ALREADY_ENABLED', '2FA is already enabled');
@@ -134,7 +143,7 @@ router.post('/2fa/enable', authenticateToken, async (req, res, next) => {
     // シークレットを一時保存（まだ有効化はしない）
     await pool.query(
       'UPDATE users SET two_factor_secret=? WHERE id=?',
-      [secret, req.user.id]
+      [secret, req.userId]
     );
     
     res.json({
@@ -160,8 +169,8 @@ router.post('/2fa/verify', authenticateToken, async (req, res, next) => {
       throw new ApiError(400, 'BAD_REQUEST', 'Token is required');
     }
     
-    const pool = req.context.pool;
-    const user = await getUserById(pool, req.user.id);
+    const pool = getPool();
+    const user = await getUserById(pool, req.userId);
     
     if (!user.two_factor_secret) {
       throw new ApiError(400, 'NO_SECRET', 'Call /auth/2fa/enable first');
@@ -187,7 +196,7 @@ router.post('/2fa/verify', authenticateToken, async (req, res, next) => {
            two_factor_backup_codes=?, 
            two_factor_enabled_at=NOW() 
        WHERE id=?`,
-      [JSON.stringify(backupCodes), req.user.id]
+      [JSON.stringify(backupCodes), req.userId]
     );
     
     res.json({
@@ -212,8 +221,8 @@ router.post('/2fa/disable', authenticateToken, async (req, res, next) => {
       throw new ApiError(400, 'BAD_REQUEST', 'Token and password are required');
     }
     
-    const pool = req.context.pool;
-    const user = await getUserById(pool, req.user.id);
+    const pool = getPool();
+    const user = await getUserById(pool, req.userId);
     
     if (!user.two_factor_enabled) {
       throw new ApiError(400, '2FA_NOT_ENABLED', '2FA is not enabled');
@@ -238,7 +247,7 @@ router.post('/2fa/disable', authenticateToken, async (req, res, next) => {
            two_factor_secret=NULL, 
            two_factor_backup_codes=NULL 
        WHERE id=?`,
-      [req.user.id]
+      [req.userId]
     );
     
     res.json({
@@ -262,7 +271,7 @@ router.post('/2fa/verify-backup', async (req, res, next) => {
       throw new ApiError(400, 'BAD_REQUEST', 'Email, password, and backup_code are required');
     }
     
-    const pool = req.context.pool;
+    const pool = getPool();
     const user = await getUserByEmail(pool, email);
     
     if (!user) {
@@ -297,8 +306,12 @@ router.post('/2fa/verify-backup', async (req, res, next) => {
     const token = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: '7d' });
     
     res.json({
-      user_id: user.id,
-      access_token: token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name
+      },
+      token,
       remaining_backup_codes: remainingCodes.length,
       message: remainingCodes.length === 0 
         ? 'Warning: All backup codes used. Generate new ones in settings.'
