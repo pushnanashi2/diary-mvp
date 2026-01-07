@@ -1,0 +1,107 @@
+name: Save CI Logs on Failure
+
+on:
+  workflow_run:
+    workflows: ["Test Suite"]
+    types:
+      - completed
+
+jobs:
+  save-logs:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    
+    permissions:
+      contents: write
+      actions: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: main
+      
+      - name: Download workflow logs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runId = context.payload.workflow_run.id;
+            
+            // Get workflow run details
+            const run = await github.rest.actions.getWorkflowRun({
+              owner,
+              repo,
+              run_id: runId,
+            });
+            
+            // Get jobs for this run
+            const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              owner,
+              repo,
+              run_id: runId,
+            });
+            
+            let logContent = `# CI Failure Log\n\n`;
+            logContent += `**Workflow Run ID**: ${runId}\n`;
+            logContent += `**Commit**: ${run.data.head_sha}\n`;
+            logContent += `**Branch**: ${run.data.head_branch}\n`;
+            logContent += `**Triggered**: ${run.data.created_at}\n`;
+            logContent += `**URL**: ${run.data.html_url}\n\n`;
+            logContent += `---\n\n`;
+            
+            // Process each failed job
+            for (const job of jobs.data.jobs) {
+              if (job.conclusion === 'failure') {
+                logContent += `## Job: ${job.name}\n\n`;
+                logContent += `**Status**: ${job.conclusion}\n`;
+                logContent += `**Started**: ${job.started_at}\n`;
+                logContent += `**Completed**: ${job.completed_at}\n\n`;
+                
+                // Get job logs
+                try {
+                  const logs = await github.rest.actions.downloadJobLogsForWorkflowRun({
+                    owner,
+                    repo,
+                    job_id: job.id,
+                  });
+                  
+                  logContent += `### Logs\n\n\`\`\`\n`;
+                  logContent += logs.data;
+                  logContent += `\n\`\`\`\n\n`;
+                } catch (error) {
+                  logContent += `*Could not download logs for this job*\n\n`;
+                }
+                
+                // Get failed steps
+                logContent += `### Failed Steps\n\n`;
+                for (const step of job.steps) {
+                  if (step.conclusion === 'failure') {
+                    logContent += `- **${step.name}** (${step.conclusion})\n`;
+                  }
+                }
+                logContent += `\n---\n\n`;
+              }
+            }
+            
+            // Save to file
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `ci-logs/failure-${timestamp}.md`;
+            
+            // Create directory if not exists
+            if (!fs.existsSync('ci-logs')) {
+              fs.mkdirSync('ci-logs', { recursive: true });
+            }
+            
+            fs.writeFileSync(filename, logContent);
+            console.log(`Log saved to ${filename}`);
+      
+      - name: Commit logs
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add ci-logs/
+          git commit -m "chore: CI失敗ログを自動保存 [skip ci]" || exit 0
+          git push

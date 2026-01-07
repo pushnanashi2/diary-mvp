@@ -1,0 +1,97 @@
+name: Notify on CI Failure
+
+on:
+  workflow_run:
+    workflows: ["Test Suite"]
+    types:
+      - completed
+
+jobs:
+  create-issue:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    
+    permissions:
+      contents: write
+      issues: write
+    
+    steps:
+      - name: Create issue with failure details
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runId = context.payload.workflow_run.id;
+            
+            // Get workflow run details
+            const run = await github.rest.actions.getWorkflowRun({
+              owner,
+              repo,
+              run_id: runId,
+            });
+            
+            // Get jobs
+            const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              owner,
+              repo,
+              run_id: runId,
+            });
+            
+            // Find failed jobs
+            const failedJobs = jobs.data.jobs.filter(job => job.conclusion === 'failure');
+            
+            if (failedJobs.length === 0) return;
+            
+            // Create issue body
+            let body = `## CI Failure Report\n\n`;
+            body += `**Workflow Run**: [#${runId}](${run.data.html_url})\n`;
+            body += `**Commit**: ${run.data.head_sha.substring(0, 7)}\n`;
+            body += `**Branch**: ${run.data.head_branch}\n`;
+            body += `**Triggered by**: @${run.data.triggering_actor.login}\n\n`;
+            body += `---\n\n`;
+            
+            for (const job of failedJobs) {
+              body += `### ❌ ${job.name}\n\n`;
+              body += `**Job URL**: ${job.html_url}\n\n`;
+              
+              // Failed steps
+              const failedSteps = job.steps.filter(step => step.conclusion === 'failure');
+              if (failedSteps.length > 0) {
+                body += `**Failed Steps**:\n`;
+                for (const step of failedSteps) {
+                  body += `- ${step.name}\n`;
+                }
+                body += `\n`;
+              }
+            }
+            
+            body += `\n---\n\n`;
+            body += `**Action Required**: Please check the workflow logs and fix the issues.\n\n`;
+            body += `[View Full Logs](${run.data.html_url})\n`;
+            
+            // Check if issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              labels: 'ci-failure',
+            });
+            
+            const existingIssue = issues.data.find(issue => 
+              issue.title.includes(`CI Failure: Run #${runId}`)
+            );
+            
+            if (existingIssue) {
+              console.log('Issue already exists:', existingIssue.number);
+              return;
+            }
+            
+            // Create new issue
+            await github.rest.issues.create({
+              owner,
+              repo,
+              title: `🔴 CI Failure: Run #${runId}`,
+              body: body,
+              labels: ['ci-failure', 'bug'],
+            });
