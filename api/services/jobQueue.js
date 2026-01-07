@@ -33,6 +33,17 @@ export class JobQueue {
   async enqueueRetrySummary(summaryId) {
     return this.enqueue('RETRY_RANGE_SUMMARY', { summary_id: summaryId });
   }
+
+  // Phase 4.1: カスタム要約再生成ジョブ
+  async enqueueCustomSummary(entryId, customOptions) {
+    return this.enqueue('CUSTOM_SUMMARY', { 
+      entry_id: entryId,
+      style: customOptions.style,
+      length: customOptions.length,
+      focus: customOptions.focus,
+      custom_prompt: customOptions.custom_prompt
+    });
+  }
 }
 
 export default JobQueue;
