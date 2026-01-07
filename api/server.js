@@ -1,5 +1,6 @@
 // Minimal server for testing
-const express = require('express');
+import express from 'express';
+
 const app = express();
 
 app.use(express.json());
@@ -10,10 +11,10 @@ app.get('/health', (req, res) => {
 });
 
 // Export app for testing
-module.exports = app;
+export default app;
 
 // Start server only if run directly
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
