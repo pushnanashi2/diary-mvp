@@ -1,63 +1,91 @@
-import json, time
+"""
+Phase4対応 Workerメイン
+Custom Summary、Audio Enhancement ジョブ追加
+"""
+
+import json
+import time
+from app.settings import load_settings
+from app.text_resources import load_text_resources
+from app.storage import get_minio_client
+from app.providers_openai import get_openai_client
+from app.db import connect_mysql
 import redis
 
-from app.settings import load_settings
-from app.text_resources import load_resources
-from app.storage import make_minio
-from app.providers_openai import make_client
-from app.db import connect_mysql
 from app.jobs import process_entry, process_range_summary, process_custom_summary, process_audio_enhancement
 
 def main():
-    s = load_settings()
-    resources = load_resources(s.resources_dir)
-
-    r = redis.from_url(s.redis_url, decode_responses=True)
-    db = connect_mysql(s.mysql_host, s.mysql_port, s.mysql_user, s.mysql_password, s.mysql_db)
-    minio = make_minio(s.s3_endpoint, s.s3_access_key, s.s3_secret_key)
-    openai_client = make_client(s.openai_api_key)
-
-    print("[worker] started (Phase4.3: audio processing + 2FA + custom summary)", flush=True)
-
+    settings = load_settings()
+    resources = load_text_resources(settings["resources_dir"])
+    
+    # Redis
+    r = redis.from_url(settings["redis_url"], decode_responses=True)
+    
+    # MySQL
+    db = connect_mysql(
+        settings["mysql_host"],
+        settings["mysql_port"],
+        settings["mysql_user"],
+        settings["mysql_password"],
+        settings["mysql_db"]
+    )
+    
+    # MinIO
+    minio = get_minio_client(
+        settings["s3_endpoint"],
+        settings["s3_access_key"],
+        settings["s3_secret_key"]
+    )
+    bucket = settings["s3_bucket"]
+    
+    # OpenAI
+    openai_client = get_openai_client(settings["openai_api_key"])
+    
+    ng_patterns = resources.get("ng_patterns", [])
+    nonsave_patterns = resources.get("non_save_word", [])
+    
+    print("[WORKER] Phase4 Worker started")
+    
     while True:
-        popped = r.brpop("jobs:default", timeout=30)
-        if not popped:
-            continue
-        _, payload = popped
-        job = json.loads(payload)
-        t = job.get("type")
-
         try:
-            if t == "PROCESS_ENTRY":
+            result = r.brpop("jobs:default", timeout=30)
+            if not result:
+                continue
+            
+            _, payload_str = result
+            job = json.loads(payload_str)
+            job_type = job.get("type")
+            
+            if job_type == "PROCESS_ENTRY":
+                entry_id = job["entryId"]
+                print(f"[WORKER] Processing entry {entry_id}")
                 process_entry(
-                    r=r, db=db, minio=minio, bucket=s.s3_bucket,
-                    openai_client=openai_client, resources=resources,
-                    entry_id=int(job["entryId"])
+                    entry_id, r, db, minio, bucket, openai_client,
+                    resources, ng_patterns, nonsave_patterns
                 )
-            elif t == "PROCESS_RANGE_SUMMARY":
-                process_range_summary(
-                    r=r, db=db, openai_client=openai_client, resources=resources,
-                    summary_id=int(job["summaryId"])
-                )
-            elif t == "CUSTOM_SUMMARY":
-                # Phase 4.1: カスタム要約ジョブ
-                process_custom_summary(
-                    r=r, db=db, openai_client=openai_client,
-                    entry_id=int(job["entry_id"]),
-                    style=job.get("style", "narrative"),
-                    length=job.get("length", "medium"),
-                    focus=job.get("focus", "key_points"),
-                    custom_prompt=job.get("custom_prompt")
-                )
-            elif t == "AUDIO_PROCESSING":
-                # Phase 4.3: 音声品質向上ジョブ
-                process_audio_enhancement(
-                    r=r, db=db, minio=minio, bucket=s.s3_bucket,
-                    entry_id=int(job["entry_id"]),
-                    process_type=job.get("process_type", "enhance")
-                )
+            
+            elif job_type == "PROCESS_RANGE_SUMMARY":
+                summary_id = job["summaryId"]
+                print(f"[WORKER] Processing summary {summary_id}")
+                process_range_summary(summary_id, db, openai_client)
+            
+            elif job_type == "CUSTOM_SUMMARY":
+                entry_id = job["entryId"]
+                custom_options = job.get("options", {})
+                print(f"[WORKER] Processing custom summary for entry {entry_id}")
+                process_custom_summary(entry_id, custom_options, db, openai_client)
+            
+            elif job_type == "AUDIO_ENHANCEMENT":
+                entry_id = job["entryId"]
+                enhancement_type = job.get("enhancementType", "denoise")
+                print(f"[WORKER] Processing audio enhancement for entry {entry_id}")
+                process_audio_enhancement(entry_id, enhancement_type, db, minio, bucket)
+            
+            else:
+                print(f"[WORKER] Unknown job type: {job_type}")
+            
         except Exception as e:
-            print(f"[worker] job failed type={t} err={type(e).__name__}:{e}", flush=True)
+            print(f"[WORKER] Job failed: {e}")
             time.sleep(1)
 
 if __name__ == "__main__":
