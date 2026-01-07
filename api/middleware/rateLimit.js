@@ -1,16 +1,48 @@
 /**
  * レート制限ミドルウェア
+ * Redisを使用してユーザーごとのリクエスト数を制限
  */
+import { ApiError } from './errorHandler.js';
 
-export async function rateLimit(redis, userId, key, limitPerMin) {
-  const bucket = Math.floor(Date.now() / 60000);
-  const redisKey = `rl:${userId}:${key}:${bucket}`;
-  
-  const count = await redis.incr(redisKey);
+/**
+ * レート制限チェック関数
+ */
+export async function checkRateLimit(redis, endpoint, userId, limitPerWindow = 30, windowSec = 60) {
+  const key = `rate_limit:${userId}:${endpoint}`;
+  const count = await redis.incr(key);
   
   if (count === 1) {
-    await redis.expire(redisKey, 60);
+    await redis.expire(key, windowSec);
   }
   
-  return count <= limitPerMin;
+  return count <= limitPerWindow;
+}
+
+/**
+ * レート制限ミドルウェアファクトリー
+ */
+export function rateLimitMiddleware(endpoint, limitPerWindow, windowSec = 60) {
+  return async (req, res, next) => {
+    try {
+      const allowed = await checkRateLimit(
+        req.redis,
+        endpoint,
+        req.userId,
+        limitPerWindow,
+        windowSec
+      );
+      
+      if (!allowed) {
+        throw new ApiError(
+          429,
+          'RATE_LIMIT_EXCEEDED',
+          `Too many requests. Limit: ${limitPerWindow} per ${windowSec} seconds`
+        );
+      }
+      
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
 }
