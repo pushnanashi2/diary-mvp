@@ -12,7 +12,30 @@ import { ulid } from 'ulid';
 const router = express.Router();
 
 /**
- * POST /support/conversations
+ * GET /health
+ * ヘルスチェック
+ */
+router.get('/health', async (req, res) => {
+  try {
+    const pool = getPool();
+    await pool.query('SELECT 1');
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: 'connected'
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /conversations
  * 新しいサポート会話を開始
  * 認証オプション（未ログインユーザーも可能）
  */
@@ -28,7 +51,7 @@ router.post('/conversations', optionalAuth, async (req, res, next) => {
     }
 
     // 未ログインユーザーの場合はメールアドレス必須
-    if (!req.user && !email) {
+    if (!req.userId && !email) {
       return res.status(400).json({
         error: { code: 'MISSING_EMAIL', message: 'Email is required for guest users' },
       });
@@ -36,14 +59,14 @@ router.post('/conversations', optionalAuth, async (req, res, next) => {
 
     const publicId = ulid();
     const sessionId = req.sessionID || ulid();
-    const userId = req.user?.id || null;
+    const userId = req.userId || null;
 
     // 会話を作成
     const [result] = await pool.query(
       `INSERT INTO support_conversations 
        (public_id, user_id, session_id, email, category, first_message, status)
        VALUES (?, ?, ?, ?, ?, ?, 'open')`,
-      [publicId, userId, sessionId, email || req.user?.email, category || 'general', message]
+      [publicId, userId, sessionId, email, category || 'general', message]
     );
 
     const conversationId = result.insertId;
@@ -92,7 +115,28 @@ router.post('/conversations', optionalAuth, async (req, res, next) => {
 });
 
 /**
- * GET /support/conversations/:public_id
+ * GET /conversations
+ * 自分のサポート会話一覧を取得（認証必須）
+ */
+router.get('/conversations', authenticateToken, async (req, res, next) => {
+  try {
+    const pool = getPool();
+    const [conversations] = await pool.query(
+      `SELECT public_id, category, status, first_message, created_at, updated_at, resolved_at
+       FROM support_conversations
+       WHERE user_id = ?
+       ORDER BY updated_at DESC`,
+      [req.userId]
+    );
+
+    res.json({ conversations });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /conversations/:public_id
  * サポート会話の詳細を取得
  */
 router.get('/conversations/:public_id', optionalAuth, async (req, res, next) => {
@@ -116,8 +160,8 @@ router.get('/conversations/:public_id', optionalAuth, async (req, res, next) => 
 
     // 権限チェック（自分の会話またはセッションIDが一致する場合のみ）
     if (
-      req.user &&
-      conversation.user_id !== req.user.id &&
+      req.userId &&
+      conversation.user_id !== req.userId &&
       conversation.session_id !== req.sessionID
     ) {
       return res.status(403).json({
@@ -150,7 +194,7 @@ router.get('/conversations/:public_id', optionalAuth, async (req, res, next) => 
 });
 
 /**
- * POST /support/conversations/:public_id/messages
+ * POST /conversations/:public_id/messages
  * 会話にメッセージを追加
  */
 router.post('/conversations/:public_id/messages', optionalAuth, async (req, res, next) => {
@@ -184,7 +228,7 @@ router.post('/conversations/:public_id/messages', optionalAuth, async (req, res,
       `INSERT INTO support_messages 
        (conversation_id, sender_type, sender_id, message)
        VALUES (?, 'user', ?, ?)`,
-      [conversation.id, req.user?.id, message]
+      [conversation.id, req.userId, message]
     );
 
     // ボットの応答を生成
@@ -213,7 +257,7 @@ router.post('/conversations/:public_id/messages', optionalAuth, async (req, res,
 });
 
 /**
- * POST /support/conversations/:public_id/resolve
+ * POST /conversations/:public_id/resolve
  * 会話を解決済みにする
  */
 router.post('/conversations/:public_id/resolve', optionalAuth, async (req, res, next) => {
