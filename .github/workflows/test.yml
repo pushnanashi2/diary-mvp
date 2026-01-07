@@ -44,10 +44,9 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '18'
-          cache: 'npm'
       
       - name: Install dependencies
-        run: npm ci
+        run: npm install
       
       - name: Run database migrations
         env:
@@ -112,8 +111,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: 'worker/requirements.txt'
       
       - name: Install dependencies
         run: |
@@ -153,7 +150,7 @@ jobs:
           node-version: '18'
       
       - name: Install dependencies
-        run: npm ci
+        run: npm install
       
       - name: Run ESLint
         run: npm run lint || exit 0
