@@ -1,57 +1,67 @@
 /**
- * JobQueue Service
- * Redis ジョブキュー投入の抽象化
+ * Job Queue Service
+ * Redis ベースのジョブキュー管理
  */
 
-import logger from '../utils/logger.js';
+import { logger } from '../utils/logger.js';
+import { getRedis } from '../config/redis.js';
 
-export class JobQueue {
-  constructor(redisClient) {
-    this.redis = redisClient;
-  }
+const QUEUE_KEY = 'jobs:queue';
+const PROCESSING_KEY = 'jobs:processing';
 
-  async enqueue(queueName, payload) {
-    try {
-      const jobData = JSON.stringify(payload);
-      await this.redis.lPush(queueName, jobData);
-      logger.info('Job enqueued', { queue: queueName, payload });
-      return { success: true };
-    } catch (error) {
-      logger.error('Failed to enqueue job', { queue: queueName, error: error.message });
-      throw error;
-    }
-  }
+/**
+ * ジョブをキューに追加
+ */
+export async function enqueueJob(jobType, payload) {
+  try {
+    const redis = getRedis();
+    const job = {
+      id: `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      type: jobType,
+      payload,
+      createdAt: new Date().toISOString()
+    };
 
-  async enqueueEntryProcessing(entryId) {
-    return this.enqueue('PROCESS_ENTRY', { entry_id: entryId });
-  }
-
-  async enqueueSummaryProcessing(summaryId) {
-    return this.enqueue('PROCESS_RANGE_SUMMARY', { summary_id: summaryId });
-  }
-
-  async enqueueRetrySummary(summaryId) {
-    return this.enqueue('RETRY_RANGE_SUMMARY', { summary_id: summaryId });
-  }
-
-  // Phase 4.1: カスタム要約再生成ジョブ
-  async enqueueCustomSummary(entryId, customOptions) {
-    return this.enqueue('CUSTOM_SUMMARY', { 
-      entry_id: entryId,
-      style: customOptions.style,
-      length: customOptions.length,
-      focus: customOptions.focus,
-      custom_prompt: customOptions.custom_prompt
-    });
-  }
-
-  // Phase 4.3: 音声処理ジョブ
-  async enqueueAudioProcessing(entryId, processType) {
-    return this.enqueue('AUDIO_PROCESSING', {
-      entry_id: entryId,
-      process_type: processType  // 'denoise', 'normalize', 'enhance'
-    });
+    await redis.lPush(QUEUE_KEY, JSON.stringify(job));
+    logger.info(`[QUEUE] Job enqueued: ${job.id} (${jobType})`);
+    return job.id;
+  } catch (error) {
+    logger.error('[QUEUE] Failed to enqueue job:', error);
+    throw error;
   }
 }
 
-export default JobQueue;
+/**
+ * ジョブをキューから取得
+ */
+export async function dequeueJob() {
+  try {
+    const redis = getRedis();
+    const jobData = await redis.rPop(QUEUE_KEY);
+    
+    if (!jobData) {
+      return null;
+    }
+
+    const job = JSON.parse(jobData);
+    await redis.hSet(PROCESSING_KEY, job.id, jobData);
+    return job;
+  } catch (error) {
+    logger.error('[QUEUE] Failed to dequeue job:', error);
+    throw error;
+  }
+}
+
+/**
+ * ジョブ完了をマーク
+ */
+export async function completeJob(jobId) {
+  try {
+    const redis = getRedis();
+    await redis.hDel(PROCESSING_KEY, jobId);
+    logger.info(`[QUEUE] Job completed: ${jobId}`);
+  } catch (error) {
+    logger.error('[QUEUE] Failed to complete job:', error);
+    throw error;
+  }
+}

@@ -9,8 +9,6 @@ services:
       MYSQL_ROOT_PASSWORD: root_password
     volumes:
       - mysqldata:/var/lib/mysql
-    ports:
-      - "3306:3306"
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -proot_password --silent"]
       interval: 5s

@@ -136,35 +136,3 @@ export function validateQuery(schema) {
     }
   };
 }
-
-/**
- * Audio upload validation (placeholder)
- */
-export function validateAudioUpload(req, res, next) {
-  // TODO: Implement proper audio file validation
-  next();
-}
-
-/**
- * Summary creation validation (placeholder)
- */
-export function validateSummaryCreate(req, res, next) {
-  // TODO: Implement proper summary validation
-  next();
-}
-
-/**
- * Summary retry validation (placeholder)
- */
-export function validateSummaryRetry(req, res, next) {
-  // TODO: Implement proper retry validation
-  next();
-}
-
-/**
- * Update template validation (placeholder)
- */
-export function validateUpdateTemplate(req, res, next) {
-  // TODO: Implement proper template validation
-  next();
-}

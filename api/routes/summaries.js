@@ -7,8 +7,8 @@ import { ulid } from 'ulid';
 import { authenticateToken } from '../middleware/auth.js';
 import { rateLimitMiddleware } from '../middleware/rateLimit.js';
 import { validateSummaryCreate, validateSummaryRetry } from '../middleware/validation.js';
-import { JobQueue } from '../services/jobQueue.js';
-import logger from '../utils/logger.js';
+import { enqueueJob } from '../services/jobQueue.js';
+import { logger } from '../utils/logger.js';
 import * as summaryQueries from '../queries/summaryQueries.js';
 import * as entryQueries from '../queries/entryQueries.js';
 import * as userQueries from '../queries/userQueries.js';
@@ -32,7 +32,7 @@ router.post('/', authenticateToken, rateLimitMiddleware('summaries', 10), valida
       templateId: finalTemplateId, status: 'processing'
     });
     
-    const jobQueue = new JobQueue(redis);
+    // Job queue functions imported
     await jobQueue.enqueueSummaryProcessing(summaryId);
     
     logger.info('Summary created', { userId: req.user.id, summaryId, publicId });
@@ -69,7 +69,7 @@ router.post('/:public_id/retry', authenticateToken, validateSummaryRetry, async 
     if (!['done', 'failed'].includes(summary.status)) return res.status(400).json({ error: { code: 'INVALID_STATUS' } });
     
     await summaryQueries.updateSummaryStatus(req.context.pool, summary.id, 'processing', null);
-    const jobQueue = new JobQueue(req.context.redis);
+    // Job queue functions imported
     await jobQueue.enqueueRetrySummary(summary.id);
     
     logger.info('Summary retry requested', { userId: req.user.id, summaryId: summary.id });
@@ -120,7 +120,7 @@ router.post('/:public_id/regenerate', authenticateToken, rateLimitMiddleware('su
     }
     
     // カスタム要約パラメータをジョブキューに渡す
-    const jobQueue = new JobQueue(req.context.redis);
+    // Job queue functions imported
     await jobQueue.enqueueCustomSummary(entry.id, {
       style: style || 'narrative',
       length: length || 'medium',

@@ -6,8 +6,8 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { rateLimitMiddleware } from '../middleware/rateLimit.js';
-import { JobQueue } from '../services/jobQueue.js';
-import logger from '../utils/logger.js';
+import { enqueueJob } from '../services/jobQueue.js';
+import { logger } from '../utils/logger.js';
 import * as entryQueries from '../queries/entryQueries.js';
 
 const router = express.Router();
@@ -23,8 +23,8 @@ router.post('/:public_id/denoise', authenticateToken, rateLimitMiddleware('audio
       return res.status(404).json({ error: { code: 'NOT_FOUND' } });
     }
     
-    const jobQueue = new JobQueue(req.context.redis);
-    await jobQueue.enqueueAudioProcessing(entry.id, 'denoise');
+    // Job queue functions imported
+    await enqueueJob('audio_processing', { entryId: entry.id, action: 'denoise' });
     
     logger.info('Audio denoise requested', { userId: req.user.id, entryId: entry.id, publicId: req.params.public_id });
     
@@ -52,8 +52,8 @@ router.post('/:public_id/normalize', authenticateToken, rateLimitMiddleware('aud
       return res.status(404).json({ error: { code: 'NOT_FOUND' } });
     }
     
-    const jobQueue = new JobQueue(req.context.redis);
-    await jobQueue.enqueueAudioProcessing(entry.id, 'normalize');
+    // Job queue functions imported
+    await enqueueJob('audio_processing', { entryId: entry.id, action: 'normalize' });
     
     logger.info('Audio normalize requested', { userId: req.user.id, entryId: entry.id, publicId: req.params.public_id });
     
@@ -81,8 +81,8 @@ router.post('/:public_id/enhance', authenticateToken, rateLimitMiddleware('audio
       return res.status(404).json({ error: { code: 'NOT_FOUND' } });
     }
     
-    const jobQueue = new JobQueue(req.context.redis);
-    await jobQueue.enqueueAudioProcessing(entry.id, 'enhance');
+    // Job queue functions imported
+    await enqueueJob('audio_processing', { entryId: entry.id, action: 'enhance' });
     
     logger.info('Audio enhance requested', { userId: req.user.id, entryId: entry.id, publicId: req.params.public_id });
     

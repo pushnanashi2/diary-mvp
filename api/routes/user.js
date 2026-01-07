@@ -6,7 +6,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { validateUpdateTemplate } from '../middleware/validation.js';
 import { StorageService } from '../services/storageService.js';
-import logger from '../utils/logger.js';
+import { logger } from '../utils/logger.js';
 import * as userQueries from '../queries/userQueries.js';
 import * as entryQueries from '../queries/entryQueries.js';
 

@@ -10,8 +10,8 @@ import { upload } from '../config/multer.js';
 import { validateAudioUpload } from '../middleware/validation.js';
 import { StorageService } from '../services/storageService.js';
 import { TitleGenerator } from '../services/titleGenerator.js';
-import { JobQueue } from '../services/jobQueue.js';
-import logger from '../utils/logger.js';
+import { enqueueJob } from '../services/jobQueue.js';
+import { logger } from '../utils/logger.js';
 import * as entryQueries from '../queries/entryQueries.js';
 import * as transcriptQueries from '../queries/transcriptQueries.js';
 
@@ -38,8 +38,8 @@ router.post('/',
         userId, title, publicId, audioUrl: url, status: 'processing'
       });
       
-      const jobQueue = new JobQueue(redis);
-      await jobQueue.enqueueEntryProcessing(entryId);
+      // Job queue functions imported
+      await enqueueJob('entry_processing', { entryId });
       
       logger.info('Entry created', { userId, entryId, publicId, title });
       res.status(201).json({ success: true, entry: { id: entryId, public_id: publicId, title, status: 'processing' } });
