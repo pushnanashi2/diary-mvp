@@ -1,4 +1,5 @@
-mysql-connector-python
-redis
-minio
-openai
+mysql-connector-python==8.2.0
+redis==5.0.1
+openai==1.8.0
+boto3==1.34.10
+minio==7.2.0

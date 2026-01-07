@@ -1,71 +1,48 @@
-# 秘密情報・認証情報（絶対にGitに入れない）
-.env
-.secrets/
-*.key
-*.pem
-
-# ローカル専用スクリプト
-scripts/quick-setup.sh
-scripts/*-local.sh
-
-# 環境変数ファイル
-api/.env
-worker/.env
-
-# Node.js
+# Dependencies
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json
-.npm
-
-# Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
-venv/
-env/
-ENV/
+
+# Environment
+.env
+.env.local
 .venv
+venv/
+ENV/
 
-# Docker volumes（ローカルデータ）
-mysql-data/
-minio-data/
-redis-data/
-
-# ログファイル
-*.log
-logs/
-
-# OS関連
-.DS_Store
-Thumbs.db
+# IDE
+.vscode/
+.idea/
 *.swp
 *.swo
 *~
 
-# IDE設定
-.vscode/
-.idea/
-*.iml
+# OS
+.DS_Store
+Thumbs.db
 
-# テスト・デバッグ用
-test-audio/
-temp/
-tmp/
+# Logs
+*.log
+logs/
 
-# 音声ファイル（サンプル以外）
-*.m4a
-*.mp3
-*.wav
-*.ogg
-*.flac
-!sample.m4a
+# Secrets
+.secrets/
+*.key
+*.crt
+*.csr
 
-# データベースバックアップ
-*.sql
-*.dump
-*.save
+# Build
+dist/
+build/
+*.egg-info/
+
+# Testing
+.coverage
+.pytest_cache/
+.jest/
+
+# Docker
+.dockerignore
