@@ -1,132 +1,138 @@
 /**
- * バリデーションミドルウェア
- * リクエストデータの検証を統一的に処理
+ * Request Validation Middleware
+ * リクエストバリデーションの統一化
  */
+
 import { ApiError } from './errorHandler.js';
+import {
+  validateULID,
+  validateEmail,
+  validateDate,
+  validateEnum,
+  validateRequired,
+  validateLength
+} from '../utils/validators.js';
 
 /**
- * メールアドレス検証
+ * ボディバリデーション
  */
-export function validateEmail(email) {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+export function validateBody(schema) {
+  return (req, res, next) => {
+    try {
+      const errors = [];
+
+      for (const [field, rules] of Object.entries(schema)) {
+        const value = req.body[field];
+
+        // 必須チェック
+        if (rules.required && !value) {
+          errors.push(`${field} is required`);
+          continue;
+        }
+
+        // 値が存在する場合のみバリデーション
+        if (value !== null && value !== undefined && value !== '') {
+          // 型チェック
+          if (rules.type) {
+            const actualType = Array.isArray(value) ? 'array' : typeof value;
+            if (actualType !== rules.type) {
+              errors.push(`${field} must be of type ${rules.type}`);
+              continue;
+            }
+          }
+
+          // 列挙値チェック
+          if (rules.enum && !rules.enum.includes(value)) {
+            errors.push(`${field} must be one of: ${rules.enum.join(', ')}`);
+          }
+
+          // 長さチェック
+          if (rules.minLength && value.length < rules.minLength) {
+            errors.push(`${field} must be at least ${rules.minLength} characters`);
+          }
+          if (rules.maxLength && value.length > rules.maxLength) {
+            errors.push(`${field} must be at most ${rules.maxLength} characters`);
+          }
+
+          // 範囲チェック
+          if (rules.min !== undefined && value < rules.min) {
+            errors.push(`${field} must be at least ${rules.min}`);
+          }
+          if (rules.max !== undefined && value > rules.max) {
+            errors.push(`${field} must be at most ${rules.max}`);
+          }
+
+          // カスタムバリデーター
+          if (rules.validator) {
+            const result = rules.validator(value);
+            if (result !== true) {
+              errors.push(result || `${field} is invalid`);
+            }
+          }
+        }
+      }
+
+      if (errors.length > 0) {
+        throw new ApiError('VALIDATION_ERROR', 'Validation failed', 400, errors);
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
 /**
- * パスワード検証
+ * パラメータバリデーション
  */
-export function validatePassword(password) {
-  return password && password.length >= 8;
+export function validateParams(schema) {
+  return (req, res, next) => {
+    try {
+      for (const [param, validator] of Object.entries(schema)) {
+        const value = req.params[param];
+        
+        if (!value) {
+          throw new ApiError('MISSING_PARAM', `Missing parameter: ${param}`, 400);
+        }
+
+        if (typeof validator === 'function') {
+          validator(value, param);
+        }
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
 /**
- * テンプレートID検証
+ * クエリバリデーション
  */
-export function validateTemplateId(templateId) {
-  const validTemplates = ['default', 'bullet', 'emotion'];
-  return validTemplates.includes(templateId);
-}
+export function validateQuery(schema) {
+  return (req, res, next) => {
+    try {
+      for (const [key, rules] of Object.entries(schema)) {
+        const value = req.query[key];
 
-/**
- * 日付文字列検証（YYYY-MM-DD）
- */
-export function validateDateString(dateStr) {
-  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-  if (!dateRegex.test(dateStr)) {
-    return false;
-  }
-  
-  const date = new Date(dateStr);
-  return !isNaN(date.getTime());
-}
+        if (rules.required && !value) {
+          throw new ApiError('MISSING_QUERY', `Missing query parameter: ${key}`, 400);
+        }
 
-/**
- * 正の整数検証
- */
-export function parsePositiveInt(value, defaultValue, max = null) {
-  const parsed = parseInt(value, 10);
-  
-  if (isNaN(parsed) || parsed < 0) {
-    return defaultValue;
-  }
-  
-  if (max !== null && parsed > max) {
-    return max;
-  }
-  
-  return parsed;
-}
+        if (value && rules.enum && !rules.enum.includes(value)) {
+          throw new ApiError(
+            'INVALID_QUERY',
+            `Invalid ${key}. Allowed values: ${rules.enum.join(', ')}`,
+            400
+          );
+        }
+      }
 
-/**
- * ユーザー登録バリデーション
- */
-export function validateRegistration(req, res, next) {
-  const { email, password } = req.body;
-  
-  if (!email || !password) {
-    throw new ApiError(400, 'MISSING_FIELDS', 'Email and password are required');
-  }
-  
-  if (!validateEmail(email)) {
-    throw new ApiError(400, 'INVALID_EMAIL', 'Invalid email format');
-  }
-  
-  if (!validatePassword(password)) {
-    throw new ApiError(400, 'WEAK_PASSWORD', 'Password must be at least 8 characters');
-  }
-  
-  next();
-}
-
-/**
- * ログインバリデーション
- */
-export function validateLogin(req, res, next) {
-  const { email, password } = req.body;
-  
-  if (!email || !password) {
-    throw new ApiError(400, 'MISSING_FIELDS', 'Email and password are required');
-  }
-  
-  next();
-}
-
-/**
- * 期間要約作成バリデーション
- */
-export function validateSummaryCreation(req, res, next) {
-  const { range_start, range_end, template_id } = req.body;
-  
-  if (!range_start || !range_end) {
-    throw new ApiError(400, 'MISSING_FIELDS', 'range_start and range_end are required');
-  }
-  
-  if (!validateDateString(range_start)) {
-    throw new ApiError(400, 'INVALID_DATE', 'range_start must be in YYYY-MM-DD format');
-  }
-  
-  if (!validateDateString(range_end)) {
-    throw new ApiError(400, 'INVALID_DATE', 'range_end must be in YYYY-MM-DD format');
-  }
-  
-  if (new Date(range_start) > new Date(range_end)) {
-    throw new ApiError(400, 'INVALID_RANGE', 'range_start must be before range_end');
-  }
-  
-  if (template_id && !validateTemplateId(template_id)) {
-    throw new ApiError(400, 'INVALID_TEMPLATE', 'Invalid template_id');
-  }
-  
-  next();
-}
-
-/**
- * 音声ファイルバリデーション
- */
-export function validateAudioUpload(req, res, next) {
-  if (!req.file) {
-    throw new ApiError(400, 'MISSING_FILE', 'Audio file is required');
-  }
-  
-  next();
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
 }

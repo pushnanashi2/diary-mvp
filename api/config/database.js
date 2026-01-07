@@ -1,38 +1,85 @@
 /**
- * データベース接続の設定
+ * Database Configuration
+ * MySQL接続プール管理の集約化
  */
 
 import mysql from 'mysql2/promise';
-import { DB_CREDENTIALS } from './secrets.js';
+import { logger } from '../utils/logger.js';
 
-export async function createDatabasePool() {
-  if (!DB_CREDENTIALS) {
-    throw new Error('Database credentials not found');
+let pool = null;
+
+/**
+ * データベース接続プールを初期化
+ */
+export async function initializeDatabase(config) {
+  if (pool) {
+    logger.warn('[DATABASE] Pool already initialized');
+    return pool;
   }
 
-  return await mysql.createPool({
-    host: DB_CREDENTIALS.host,
-    port: DB_CREDENTIALS.port || 3306,
-    user: DB_CREDENTIALS.user,
-    password: DB_CREDENTIALS.password,
-    database: DB_CREDENTIALS.database,
-    connectionLimit: 10,
-  });
+  try {
+    pool = mysql.createPool({
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      password: config.password,
+      database: config.database,
+      waitForConnections: true,
+      connectionLimit: config.connectionLimit || 10,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0
+    });
+
+    // 接続テスト
+    const connection = await pool.getConnection();
+    await connection.ping();
+    connection.release();
+
+    logger.info('[DATABASE] Connection pool initialized successfully');
+    return pool;
+  } catch (error) {
+    logger.error('[DATABASE] Failed to initialize pool:', error);
+    throw error;
+  }
 }
 
 /**
- * カラムが存在しなければ追加
+ * データベース接続プールを取得
  */
-export async function addColumnIfMissing(pool, table, column, alterSql) {
-  const dbName = DB_CREDENTIALS.database;
-  const [rows] = await pool.query(
-    `SELECT COUNT(*) AS cnt
-     FROM information_schema.columns
-     WHERE table_schema=? AND table_name=? AND column_name=?`,
-    [dbName, table, column]
-  );
-  
-  if (Number(rows[0]?.cnt || 0) === 0) {
-    await pool.query(alterSql);
+export function getPool() {
+  if (!pool) {
+    throw new Error('Database pool not initialized. Call initializeDatabase first.');
+  }
+  return pool;
+}
+
+/**
+ * データベース接続を安全にクローズ
+ */
+export async function closeDatabase() {
+  if (pool) {
+    await pool.end();
+    pool = null;
+    logger.info('[DATABASE] Connection pool closed');
+  }
+}
+
+/**
+ * トランザクションヘルパー
+ */
+export async function withTransaction(callback) {
+  const connection = await pool.getConnection();
+  await connection.beginTransaction();
+
+  try {
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
   }
 }

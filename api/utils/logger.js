@@ -1,68 +1,44 @@
 /**
- * 構造化ログユーティリティ
- * JSON形式でログを出力し、ログ解析ツールでの検索を容易にする
+ * Logging Utility
+ * 統一されたロギング機能
  */
 
 const LOG_LEVELS = {
-  DEBUG: 'debug',
-  INFO: 'info',
-  WARN: 'warn',
-  ERROR: 'error'
+  ERROR: 0,
+  WARN: 1,
+  INFO: 2,
+  DEBUG: 3
 };
 
-/**
- * ログを構造化してJSON出力
- */
-function log(level, message, metadata = {}) {
-  const logEntry = {
-    level,
-    timestamp: new Date().toISOString(),
-    message,
-    ...metadata
-  };
+const currentLevel = LOG_LEVELS[process.env.LOG_LEVEL || 'INFO'];
 
-  const output = JSON.stringify(logEntry);
-
-  if (level === LOG_LEVELS.ERROR) {
-    console.error(output);
-  } else {
-    console.log(output);
-  }
+function formatMessage(level, ...args) {
+  const timestamp = new Date().toISOString();
+  return `[${timestamp}] [${level}] ${args.join(' ')}`;
 }
 
 export const logger = {
-  debug: (message, metadata) => log(LOG_LEVELS.DEBUG, message, metadata),
-  info: (message, metadata) => log(LOG_LEVELS.INFO, message, metadata),
-  warn: (message, metadata) => log(LOG_LEVELS.WARN, message, metadata),
-  error: (message, error, metadata = {}) => {
-    log(LOG_LEVELS.ERROR, message, {
-      ...metadata,
-      error: {
-        message: error?.message,
-        stack: error?.stack,
-        code: error?.code
-      }
-    });
+  error(...args) {
+    if (currentLevel >= LOG_LEVELS.ERROR) {
+      console.error(formatMessage('ERROR', ...args));
+    }
+  },
+
+  warn(...args) {
+    if (currentLevel >= LOG_LEVELS.WARN) {
+      console.warn(formatMessage('WARN', ...args));
+    }
+  },
+
+  info(...args) {
+    if (currentLevel >= LOG_LEVELS.INFO) {
+      console.info(formatMessage('INFO', ...args));
+    }
+  },
+
+  debug(...args) {
+    if (currentLevel >= LOG_LEVELS.DEBUG) {
+      console.debug(formatMessage('DEBUG', ...args));
+    }
   }
 };
-
-/**
- * Express用リクエストロガーミドルウェア
- */
-export function requestLogger(req, res, next) {
-  const start = Date.now();
-
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    logger.info('HTTP Request', {
-      method: req.method,
-      path: req.path,
-      status: res.statusCode,
-      duration_ms: duration,
-      user_id: req.userId || null,
-      ip: req.ip
-    });
-  });
-
-  next();
-}
