@@ -1,5 +1,5 @@
 """
-ジョブ処理モジュール（Phase4.1対応版）
+ジョブ処理モジュール（Phase4.3対応版）
 
 Phase2追加機能:
 - タグ自動抽出（tagger.py）
@@ -7,17 +7,21 @@ Phase2追加機能:
 
 Phase4.1追加機能:
 - カスタム要約再生成（custom_summarizer.py）
+
+Phase4.3追加機能:
+- 音声品質向上処理（audio_processor.py）
 """
 
 import json, re
 from .locks import acquire_lock
-from .storage import get_object_bytes
+from .storage import get_object_bytes, put_object
 from .cleaners import clean_transcript
 from .providers_openai import stt as stt_openai, chat_summary
 from .pii import detect_and_mask
-from .tagger import extract_tags  # Phase2-2
-from .ng_detector import detect_ng  # Phase2-3
-from .custom_summarizer import generate_custom_summary  # Phase4.1
+from .tagger import extract_tags
+from .ng_detector import detect_ng
+from .custom_summarizer import generate_custom_summary
+from .audio_processor import denoise_audio, normalize_audio, enhance_audio
 from . import db as dbm
 
 def parse_audio_key(audio_url: str, bucket: str) -> str:
@@ -45,7 +49,6 @@ def is_bullet_format_ok(text: str) -> bool:
 def detect_flags(text: str, ng_patterns, nonsave_patterns) -> list[str]:
     """
     旧版のNG検出（後方互換）
-    Phase2-3でng_detector.pyに移行したが、resources経由の検出も残す
     """
     t = text or ""
     types = []
@@ -58,10 +61,6 @@ def detect_flags(text: str, ng_patterns, nonsave_patterns) -> list[str]:
 def process_entry(*, r, db, minio, bucket: str, openai_client, resources, entry_id: int):
     """
     エントリ処理（Phase2対応版）
-    
-    追加機能:
-    1. タグ自動抽出（transcript_textから）
-    2. NG検出強化（ng_detector.py使用）
     """
     if not acquire_lock(r, f"lock:entry:{entry_id}", ttl_sec=600):
         return
@@ -70,7 +69,6 @@ def process_entry(*, r, db, minio, bucket: str, openai_client, resources, entry_
     if not e:
         return
 
-    # 既に処理済みならスキップ
     if e.get("transcript_text") is not None and e.get("summary_text") is not None:
         return
 
@@ -80,23 +78,19 @@ def process_entry(*, r, db, minio, bucket: str, openai_client, resources, entry_
     raw = stt_openai(openai_client, audio_bytes, filename=key.split("/")[-1])
     cleaned = clean_transcript(raw, resources.filler_patterns)
 
-    # PII検出＆マスク（保存はマスク後のみ）
     pii = detect_and_mask(cleaned, resources.pii_email_patterns, resources.pii_phone_patterns)
     masked = pii.masked_text
     pii_detected = 1 if pii.types else 0
     pii_types_json = json.dumps(pii.types, ensure_ascii=False) if pii.types else None
 
-    # Phase2-3: NG検出強化（ng_detector.py使用）
     ng_result = detect_ng(masked)
     flag_types = ng_result['ng_types'].copy() if ng_result['is_ng'] else []
     
-    # 旧版のNG検出も併用（resources経由）
     old_flags = detect_flags(masked, resources.ng_topic_patterns, resources.non_save_patterns)
     for f in old_flags:
         if f not in flag_types:
             flag_types.append(f)
 
-    # 重要：PIIが出たら、それだけでAIブロック対象
     if pii_detected == 1:
         if "pii" not in flag_types:
             flag_types.insert(0, "pii")
@@ -104,13 +98,11 @@ def process_entry(*, r, db, minio, bucket: str, openai_client, resources, entry_
     content_flagged = 1 if flag_types else 0
     flag_types_json = json.dumps(flag_types, ensure_ascii=False) if flag_types else None
 
-    # 重要：flaggedなら要約を作らない（LLMに渡さない）
     summ = None
     if masked and content_flagged == 0:
         user = resources.entry_summary_user_tpl.replace("{TEXT}", masked)
         summ = chat_summary(openai_client, resources.entry_summary_system, user)
 
-    # DB更新
     dbm.update_entry(
         db,
         entry_id,
@@ -122,7 +114,6 @@ def process_entry(*, r, db, minio, bucket: str, openai_client, resources, entry_
         flag_types_json,
     )
     
-    # Phase2-2: タグ抽出＆保存
     if masked and content_flagged == 0:
         tags = extract_tags(masked)
         if tags:
@@ -132,8 +123,6 @@ def process_entry(*, r, db, minio, bucket: str, openai_client, resources, entry_
 def process_range_summary(*, r, db, openai_client, resources, summary_id: int):
     """
     期間要約処理
-    
-    変更なし（Phase2では変更不要）
     """
     if not dbm.claim_summary_processing(db, summary_id):
         return
@@ -146,7 +135,6 @@ def process_range_summary(*, r, db, openai_client, resources, summary_id: int):
         template_id = sm.get("template_id") or "default"
         tpl = resources.range_summary_user_templates.get(template_id) or resources.range_summary_user_templates["default"]
 
-        # collect_transcripts側で content_flagged=0 のみ取得する実装前提（AIに伝わらない）
         texts = dbm.collect_transcripts(db, sm["user_id"], sm["range_start"], sm["range_end"])
         combined = "\n\n".join(texts).strip()
 
@@ -169,13 +157,6 @@ def process_range_summary(*, r, db, openai_client, resources, summary_id: int):
 def process_custom_summary(*, r, db, openai_client, entry_id: int, style: str, length: str, focus: str, custom_prompt: str = None):
     """
     Phase 4.1: カスタム要約再生成
-    
-    Args:
-        entry_id: エントリID
-        style: 要約スタイル (bullet_points, narrative, concise, detailed)
-        length: 要約の長さ (short, medium, long)
-        focus: フォーカスポイント (action_items, key_points, emotions, events, insights)
-        custom_prompt: ユーザー指定のカスタムプロンプト（オプション）
     """
     if not acquire_lock(r, f"lock:custom_summary:{entry_id}", ttl_sec=300):
         return
@@ -191,12 +172,10 @@ def process_custom_summary(*, r, db, openai_client, entry_id: int, style: str, l
             print(f"[process_custom_summary] Entry {entry_id} has no transcript")
             return
         
-        # content_flaggedの場合はスキップ
         if e.get("content_flagged", 0) == 1:
             print(f"[process_custom_summary] Entry {entry_id} is flagged, skipping")
             return
         
-        # カスタム要約生成
         custom_summary = generate_custom_summary(
             transcript_text,
             style=style,
@@ -205,11 +184,57 @@ def process_custom_summary(*, r, db, openai_client, entry_id: int, style: str, l
             custom_prompt=custom_prompt
         )
         
-        # summary_textフィールドを上書き更新
         dbm.update_entry_summary(db, entry_id, custom_summary)
         
         print(f"[process_custom_summary] Entry {entry_id} custom summary generated: style={style}, length={length}, focus={focus}")
         
     except Exception as e:
         print(f"[process_custom_summary] Error processing entry {entry_id}: {type(e).__name__}: {e}")
+        raise
+
+def process_audio_enhancement(*, r, db, minio, bucket: str, entry_id: int, process_type: str):
+    """
+    Phase 4.3: 音声品質向上処理
+    
+    Args:
+        entry_id: エントリID
+        process_type: 処理タイプ ('denoise', 'normalize', 'enhance')
+    """
+    if not acquire_lock(r, f"lock:audio_processing:{entry_id}", ttl_sec=300):
+        return
+    
+    try:
+        e = dbm.get_entry(db, entry_id)
+        if not e:
+            print(f"[process_audio_enhancement] Entry {entry_id} not found")
+            return
+        
+        # 元の音声取得
+        key = parse_audio_key(e["audio_url"], bucket)
+        audio_bytes = get_object_bytes(minio, bucket, key)
+        
+        # 処理実行
+        if process_type == 'denoise':
+            processed_audio = denoise_audio(audio_bytes)
+        elif process_type == 'normalize':
+            processed_audio = normalize_audio(audio_bytes)
+        elif process_type == 'enhance':
+            processed_audio = enhance_audio(audio_bytes)
+        else:
+            print(f"[process_audio_enhancement] Unknown process_type: {process_type}")
+            return
+        
+        # 処理済み音声を新しいキーで保存
+        base_key = key.rsplit('.', 1)[0]
+        new_key = f"{base_key}_{process_type}.mp3"
+        new_url = put_object(minio, bucket, new_key, processed_audio, 'audio/mpeg')
+        
+        # DBに処理済みURLを記録（audio_urlは上書きしない、別フィールドに保存）
+        # 注: 現在のスキーマには処理済み音声用フィールドがないため、コメントアウト
+        # dbm.update_processed_audio_url(db, entry_id, process_type, new_url)
+        
+        print(f"[process_audio_enhancement] Entry {entry_id} audio {process_type} completed: {new_url}")
+        
+    except Exception as e:
+        print(f"[process_audio_enhancement] Error processing entry {entry_id}: {type(e).__name__}: {e}")
         raise
