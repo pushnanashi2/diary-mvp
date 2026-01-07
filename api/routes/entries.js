@@ -13,6 +13,7 @@ import { TitleGenerator } from '../services/titleGenerator.js';
 import { JobQueue } from '../services/jobQueue.js';
 import logger from '../utils/logger.js';
 import * as entryQueries from '../queries/entryQueries.js';
+import * as transcriptQueries from '../queries/transcriptQueries.js';
 
 const router = express.Router();
 
@@ -91,6 +92,95 @@ router.delete('/:public_id', authenticateToken, async (req, res, next) => {
     logger.info('Entry deleted', { userId: req.user.id, publicId: req.params.public_id });
     res.json({ success: true });
   } catch (error) {
+    next(error);
+  }
+});
+
+// Phase 4.1: 文字起こし編集API
+router.put('/:public_id/transcript', authenticateToken, async (req, res, next) => {
+  const { edited_text, edit_note } = req.body;
+  
+  if (!edited_text || typeof edited_text !== 'string') {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'edited_text is required' } });
+  }
+  
+  try {
+    const entry = await entryQueries.getEntryByPublicId(req.context.pool, req.params.public_id);
+    if (!entry || entry.user_id !== req.user.id) {
+      return res.status(404).json({ error: { code: 'NOT_FOUND' } });
+    }
+    
+    const result = await transcriptQueries.saveTranscriptEdit(
+      req.context.pool,
+      entry.id,
+      edited_text,
+      req.user.id,
+      edit_note
+    );
+    
+    logger.info('Transcript edited', { 
+      userId: req.user.id, 
+      entryId: entry.id, 
+      publicId: req.params.public_id,
+      version: result.version 
+    });
+    
+    res.json({ 
+      success: true, 
+      transcript: { 
+        version: result.version,
+        edited_text,
+        edit_note
+      } 
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Phase 4.1: 編集履歴取得API
+router.get('/:public_id/transcript/history', authenticateToken, async (req, res, next) => {
+  try {
+    const entry = await entryQueries.getEntryByPublicId(req.context.pool, req.params.public_id);
+    if (!entry || entry.user_id !== req.user.id) {
+      return res.status(404).json({ error: { code: 'NOT_FOUND' } });
+    }
+    
+    const history = await transcriptQueries.getTranscriptHistory(req.context.pool, entry.id);
+    res.json({ success: true, history });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Phase 4.1: 特定バージョンへ戻す
+router.post('/:public_id/transcript/revert', authenticateToken, async (req, res, next) => {
+  const { version } = req.body;
+  
+  if (typeof version !== 'number' || version < 0) {
+    return res.status(400).json({ error: { code: 'INVALID_VERSION', message: 'version must be >= 0' } });
+  }
+  
+  try {
+    const entry = await entryQueries.getEntryByPublicId(req.context.pool, req.params.public_id);
+    if (!entry || entry.user_id !== req.user.id) {
+      return res.status(404).json({ error: { code: 'NOT_FOUND' } });
+    }
+    
+    const result = await transcriptQueries.revertToVersion(req.context.pool, entry.id, version);
+    
+    logger.info('Transcript reverted', { 
+      userId: req.user.id, 
+      entryId: entry.id, 
+      publicId: req.params.public_id,
+      version 
+    });
+    
+    res.json({ success: true, reverted_to: result.version });
+  } catch (error) {
+    if (error.message === 'TRANSCRIPT_VERSION_NOT_FOUND') {
+      return res.status(404).json({ error: { code: 'VERSION_NOT_FOUND' } });
+    }
     next(error);
   }
 });
