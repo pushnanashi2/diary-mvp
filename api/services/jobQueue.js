@@ -44,6 +44,14 @@ export class JobQueue {
       custom_prompt: customOptions.custom_prompt
     });
   }
+
+  // Phase 4.3: 音声処理ジョブ
+  async enqueueAudioProcessing(entryId, processType) {
+    return this.enqueue('AUDIO_PROCESSING', {
+      entry_id: entryId,
+      process_type: processType  // 'denoise', 'normalize', 'enhance'
+    });
+  }
 }
 
 export default JobQueue;
