@@ -8,7 +8,8 @@ __pycache__/
 
 # Environment
 .env
-.env.local
+.env.*
+!.env.example
 .venv
 venv/
 ENV/
@@ -43,9 +44,19 @@ build/
 .coverage
 .pytest_cache/
 .jest/
+coverage/
 
 # Docker
 .dockerignore
 
-# Environment files
-.env*
+# Backup files
+*.backup
+*.backup.*
+*.tmp
+*.save
+*.bak
+
+# Lock files (keep package-lock.json for reproducibility)
+# Uncomment if you want to ignore lock files
+# package-lock.json
+# poetry.lock
