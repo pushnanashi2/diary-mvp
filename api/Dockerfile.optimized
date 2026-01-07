@@ -1,0 +1,39 @@
+# マルチステージビルドによる最適化Dockerfile
+# イメージサイズ削減 & ビルド高速化 & セキュリティ向上
+
+# ========== Stage 1: Builder ==========
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# package.jsonとpackage-lock.jsonのみコピー（キャッシュ活用）
+COPY package*.json ./
+
+# 本番用依存関係のみインストール
+RUN npm ci --only=production --ignore-scripts
+
+# ========== Stage 2: Runtime ==========
+FROM node:20-alpine
+
+# セキュリティ: 非rootユーザーで実行
+RUN addgroup -g 1001 appuser && \
+    adduser -D -u 1001 -G appuser appuser
+
+WORKDIR /app
+
+# Builderステージからnode_modulesをコピー
+COPY --from=builder --chown=appuser:appuser /app/node_modules ./node_modules
+
+# アプリケーションコードをコピー
+COPY --chown=appuser:appuser . .
+
+# 非rootユーザーに切り替え
+USER appuser
+
+# ヘルスチェック
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 8000) + '/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"
+
+EXPOSE 8000
+
+CMD ["node", "server.js"]
