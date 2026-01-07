@@ -65,9 +65,28 @@ export async function isAdmin(req, res, next) {
 
   try {
     const db = await getConnection();
-    const [admins] = await db.query(
-      'SELECT id, role FROM admins WHERE user_id = ? AND is_active = true',
+    
+    // まずユーザー情報を取得
+    const [users] = await db.query(
+      'SELECT id, email FROM users WHERE id = ?',
       [req.userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(401).json({ 
+        error: { 
+          code: 'UNAUTHORIZED',
+          message: 'User not found' 
+        } 
+      });
+    }
+
+    const user = users[0];
+
+    // メールアドレスで管理者テーブルをチェック
+    const [admins] = await db.query(
+      'SELECT id, role FROM admins WHERE email = ? AND is_active = true',
+      [user.email]
     );
 
     if (admins.length === 0) {
