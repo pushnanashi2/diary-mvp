@@ -1,8 +1,11 @@
 """
-データベース操作モジュール（Phase2対応版）
+データベース操作モジュール（Phase4.1対応版）
 
 Phase2追加:
 - save_entry_tags(): タグ保存機能
+
+Phase4.1追加:
+- update_entry_summary(): 要約のみ更新
 """
 
 import time
@@ -23,7 +26,7 @@ def connect_mysql(host: str, port: int, user: str, password: str, database: str)
 
 def get_entry(db, entry_id: int):
     cur = db.cursor(dictionary=True)
-    cur.execute("SELECT id, audio_url, transcript_text, summary_text FROM entries WHERE id=%s", (entry_id,))
+    cur.execute("SELECT id, audio_url, transcript_text, summary_text, content_flagged FROM entries WHERE id=%s", (entry_id,))
     return cur.fetchone()
 
 def update_entry(db, entry_id: int, transcript: str, summary: str | None,
@@ -33,6 +36,21 @@ def update_entry(db, entry_id: int, transcript: str, summary: str | None,
     cur.execute(
         "UPDATE entries SET transcript_text=%s, summary_text=%s, pii_detected=%s, pii_types=%s, content_flagged=%s, flag_types=%s WHERE id=%s",
         (transcript, summary, pii_detected, pii_types_json, content_flagged, flag_types_json, entry_id)
+    )
+
+def update_entry_summary(db, entry_id: int, summary: str):
+    """
+    Phase 4.1: 要約テキストのみ更新（カスタム要約再生成用）
+    
+    Args:
+        db: データベース接続
+        entry_id: エントリID
+        summary: 新しい要約テキスト
+    """
+    cur = db.cursor()
+    cur.execute(
+        "UPDATE entries SET summary_text=%s WHERE id=%s",
+        (summary, entry_id)
     )
 
 def save_entry_tags(db, entry_id: int, tags: list[str]):
