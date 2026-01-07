@@ -1,7 +1,14 @@
 #!/usr/bin/env node
-const fs = require('fs');
-const path = require('path');
-const { Pool } = require('pg');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import pg from 'pg';
+
+const { Pool } = pg;
+
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // 環境変数から接続情報を取得
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/diary_test_db';
@@ -98,8 +105,8 @@ async function createBasicTables() {
 }
 
 // スクリプトとして実行された場合
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   runMigrations();
 }
 
-module.exports = { runMigrations };
+export { runMigrations };
