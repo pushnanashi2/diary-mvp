@@ -1,9 +1,12 @@
 """
-ジョブ処理モジュール（Phase2対応版）
+ジョブ処理モジュール（Phase4.1対応版）
 
 Phase2追加機能:
 - タグ自動抽出（tagger.py）
 - NG検出強化（ng_detector.py）
+
+Phase4.1追加機能:
+- カスタム要約再生成（custom_summarizer.py）
 """
 
 import json, re
@@ -14,6 +17,7 @@ from .providers_openai import stt as stt_openai, chat_summary
 from .pii import detect_and_mask
 from .tagger import extract_tags  # Phase2-2
 from .ng_detector import detect_ng  # Phase2-3
+from .custom_summarizer import generate_custom_summary  # Phase4.1
 from . import db as dbm
 
 def parse_audio_key(audio_url: str, bucket: str) -> str:
@@ -160,4 +164,52 @@ def process_range_summary(*, r, db, openai_client, resources, summary_id: int):
 
     except Exception as e:
         dbm.set_summary_failed(db, summary_id, type(e).__name__, f"{type(e).__name__}:{e}")
+        raise
+
+def process_custom_summary(*, r, db, openai_client, entry_id: int, style: str, length: str, focus: str, custom_prompt: str = None):
+    """
+    Phase 4.1: カスタム要約再生成
+    
+    Args:
+        entry_id: エントリID
+        style: 要約スタイル (bullet_points, narrative, concise, detailed)
+        length: 要約の長さ (short, medium, long)
+        focus: フォーカスポイント (action_items, key_points, emotions, events, insights)
+        custom_prompt: ユーザー指定のカスタムプロンプト（オプション）
+    """
+    if not acquire_lock(r, f"lock:custom_summary:{entry_id}", ttl_sec=300):
+        return
+
+    try:
+        e = dbm.get_entry(db, entry_id)
+        if not e:
+            print(f"[process_custom_summary] Entry {entry_id} not found")
+            return
+        
+        transcript_text = e.get("transcript_text")
+        if not transcript_text:
+            print(f"[process_custom_summary] Entry {entry_id} has no transcript")
+            return
+        
+        # content_flaggedの場合はスキップ
+        if e.get("content_flagged", 0) == 1:
+            print(f"[process_custom_summary] Entry {entry_id} is flagged, skipping")
+            return
+        
+        # カスタム要約生成
+        custom_summary = generate_custom_summary(
+            transcript_text,
+            style=style,
+            length=length,
+            focus=focus,
+            custom_prompt=custom_prompt
+        )
+        
+        # summary_textフィールドを上書き更新
+        dbm.update_entry_summary(db, entry_id, custom_summary)
+        
+        print(f"[process_custom_summary] Entry {entry_id} custom summary generated: style={style}, length={length}, focus={focus}")
+        
+    except Exception as e:
+        print(f"[process_custom_summary] Error processing entry {entry_id}: {type(e).__name__}: {e}")
         raise
