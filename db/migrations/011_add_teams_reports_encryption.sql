@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS teams (
   public_id CHAR(26) NOT NULL UNIQUE,
   name VARCHAR(200) NOT NULL,
   description TEXT,
-  owner_id INT NOT NULL,
+  owner_id VARCHAR(26) NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS teams (
 CREATE TABLE IF NOT EXISTS team_members (
   id INT AUTO_INCREMENT PRIMARY KEY,
   team_id INT NOT NULL,
-  user_id INT NOT NULL,
+  user_id VARCHAR(26) NOT NULL,
   role ENUM('owner', 'admin', 'member', 'viewer') DEFAULT 'member',
   joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY unique_team_user (team_id, user_id),
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS team_members (
 -- 定期レポート設定
 CREATE TABLE IF NOT EXISTS scheduled_reports (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
+  user_id VARCHAR(26) NOT NULL,
   public_id CHAR(26) NOT NULL UNIQUE,
   name VARCHAR(200) NOT NULL,
   frequency ENUM('daily', 'weekly', 'monthly') NOT NULL,
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS scheduled_reports (
 -- 暗号化キー管理
 CREATE TABLE IF NOT EXISTS encryption_keys (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
+  user_id VARCHAR(26) NOT NULL,
   key_id VARCHAR(100) NOT NULL UNIQUE,
   encrypted_key TEXT NOT NULL,
   algorithm VARCHAR(50) DEFAULT 'AES-256-GCM',
@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS encryption_keys (
 -- AIチャット履歴
 CREATE TABLE IF NOT EXISTS chat_conversations (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
+  user_id VARCHAR(26) NOT NULL,
   public_id CHAR(26) NOT NULL UNIQUE,
   title VARCHAR(500),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 -- コーチングセッション
 CREATE TABLE IF NOT EXISTS coaching_sessions (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
+  user_id VARCHAR(26) NOT NULL,
   public_id CHAR(26) NOT NULL UNIQUE,
   session_type ENUM('goal_setting', 'reflection', 'habit_tracking', 'progress_review') NOT NULL,
   status ENUM('scheduled', 'in_progress', 'completed', 'cancelled') DEFAULT 'scheduled',
