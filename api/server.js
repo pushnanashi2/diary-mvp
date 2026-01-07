@@ -33,6 +33,8 @@ import reportsRouter from './routes/reports.js';
 import chatRouter from './routes/chat.js';
 import coachingRouter from './routes/coaching.js';
 import audioRouter from './routes/audio.js';
+import supportRouter from './routes/support.js';
+import adminRouter from './routes/admin.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -71,6 +73,8 @@ app.use('/reports', reportsRouter);
 app.use('/chat', chatRouter);
 app.use('/coaching', coachingRouter);
 app.use('/audio', audioRouter);
+app.use('/api/support', supportRouter);
+app.use('/api/admin', adminRouter);
 
 // 404ハンドラー
 app.use(notFoundHandler);
