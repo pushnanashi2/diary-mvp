@@ -8,11 +8,11 @@ import time
 import signal
 import sys
 from app.settings import load_settings
-from app.text_resources import load_text_resources
-from app.storage import get_minio_client
-from app.providers_openai import get_openai_client
+from app.text_resources import load_resources
+from app.storage import make_minio
 from app.db import connect_mysql
 import redis
+import openai
 
 from app.entry_processor import EntryProcessor
 from app.jobs import process_range_summary, process_custom_summary, process_audio_enhancement
@@ -36,7 +36,7 @@ class Worker:
         
         # 設定読み込み
         self.settings = load_settings()
-        self.resources = load_text_resources(self.settings["resources_dir"])
+        self.resources = load_resources(self.settings["resources_dir"])
         
         # Redis
         self.redis_client = redis.from_url(
@@ -54,20 +54,20 @@ class Worker:
         )
         
         # MinIO
-        self.minio = get_minio_client(
+        self.minio = make_minio(
             self.settings["s3_endpoint"],
             self.settings["s3_access_key"],
             self.settings["s3_secret_key"]
         )
         
         # OpenAI
-        self.openai_client = get_openai_client(self.settings["openai_api_key"])
+        openai.api_key = self.settings["openai_api_key"]
         
         # Entry Processor
         self.entry_processor = EntryProcessor(
             self.db,
             self.redis_client,
-            self.openai_client,
+            None,  # openai_client is not needed as a separate object
             self.minio,
             self.settings["s3_bucket"],
             self.resources,
@@ -90,13 +90,13 @@ class Worker:
             elif job_type == "PROCESS_RANGE_SUMMARY":
                 summary_id = job["summaryId"]
                 print(f"[WORKER] Processing range summary {summary_id}")
-                process_range_summary(summary_id, self.db, self.openai_client)
+                process_range_summary(summary_id, self.db, None)
             
             elif job_type == "CUSTOM_SUMMARY":
                 entry_id = job["entryId"]
                 options = job.get("options", {})
                 print(f"[WORKER] Processing custom summary {entry_id}")
-                process_custom_summary(entry_id, options, self.db, self.openai_client)
+                process_custom_summary(entry_id, options, self.db, None)
             
             elif job_type == "AUDIO_ENHANCEMENT":
                 entry_id = job["entryId"]
