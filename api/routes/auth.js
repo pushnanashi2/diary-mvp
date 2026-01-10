@@ -8,7 +8,7 @@
  * POST /auth/2fa/verify-backup - バックアップコード検証
  */
 import express from 'express';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { createUser, getUserByEmail, getUserById } from '../queries/userQueries.js';
 import { JWT_SECRET } from '../config/secrets.js';
